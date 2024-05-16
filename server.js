@@ -1,11 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
+
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 const http = require('http');
 const socketIo = require('socket.io');
-
+const { createCanvas, loadImage } = require('canvas');
+const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const app = express();
@@ -89,6 +90,109 @@ app.post('/whiteboard/save', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+app.post('/whiteboard/save/image', async (req, res) => {
+    try {
+        const { filename, data } = req.body;
+
+        if (!Array.isArray(data)) {
+            throw new Error("Invalid data format.");
+        }
+
+        // Assuming a fixed canvas size for simplicity
+        const canvasWidth = 1600;
+        const canvasHeight = 1200;
+
+        // 1. Convert JSON to Image (using canvas)
+        const canvas = createCanvas(canvasWidth, canvasHeight);
+        const ctx = canvas.getContext('2d');
+
+        // Draw elements from JSON data onto canvas
+        for (const item of data) {
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = item.thickness;
+
+            ctx.beginPath();
+
+            switch (item.type) {
+                case 'pen':
+                case 'eraser':
+                    if (item.points && item.points.length > 0) {
+                        ctx.moveTo(item.points[0].x, item.points[0].y);
+                        for (const point of item.points) {
+                            ctx.lineTo(point.x, point.y);
+                        }
+                        ctx.stroke();
+                    }
+                    break;
+                case 'rectangle':
+                    ctx.strokeRect(item.startX, item.startY, item.endX - item.startX, item.endY - item.startY);
+                    if (item.fillStyle) {
+                        ctx.fillStyle = item.fillStyle;
+                        ctx.fillRect(item.startX, item.startY, item.endX - item.startX, item.endY - item.startY);
+                    }
+                    break;
+                case 'circle':
+                    const radius = Math.hypot(item.endX - item.startX, item.endY - item.startY);
+                    ctx.arc(item.startX, item.startY, radius, 0, 2 * Math.PI);
+                    if (item.fillStyle) {
+                        ctx.fillStyle = item.fillStyle;
+                        ctx.fill();
+                    }
+                    ctx.stroke();
+                    break;
+                case 'line':
+                    ctx.moveTo(item.startX, item.startY);
+                    ctx.lineTo(item.endX, item.endY);
+                    ctx.stroke();
+                    if (item.lineStyle === 'arrow') {
+                        // Arrowhead drawing logic
+                        const arrowSize = 10;
+                        const angle = Math.atan2(item.endY - item.startY, item.endX - item.startX);
+                        const x1 = item.endX - arrowSize * Math.cos(angle - Math.PI / 6);
+                        const y1 = item.endY - arrowSize * Math.sin(angle - Math.PI / 6);
+                        const x2 = item.endX - arrowSize * Math.cos(angle + Math.PI / 6);
+                        const y2 = item.endY - arrowSize * Math.sin(angle + Math.PI / 6);
+                        ctx.moveTo(item.endX, item.endY);
+                        ctx.lineTo(x1, y1);
+                        ctx.moveTo(item.endX, item.endY);
+                        ctx.lineTo(x2, y2);
+                        ctx.stroke();
+                    }
+                    break;
+                case 'text':
+                    ctx.font = item.font || '16px sans-serif';
+                    ctx.fillText(item.text, item.startX, item.startY);
+                    break;
+            }
+        }
+
+        // 2. Save Image to Nextcloud
+        const imageBuffer = canvas.toBuffer('image/png');
+        const fileExtension = '.png';
+        const adjustedFilename = filename.replace('.json', fileExtension);
+        const filePath = `${whiteboardFolder}/${adjustedFilename}`;
+
+        const response = await fetch(`${webdavUrl}/${filePath}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'image/png'
+            },
+            body: imageBuffer
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to save image: ${response.statusText}`);
+        }
+
+        res.status(200).json({ success: true, message: 'Image saved successfully!' });
+    } catch (error) {
+        console.error("Error saving whiteboard as image:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Load whiteboard data
 app.get('/whiteboard/load/:fileId', async (req, res) => {
     try {
