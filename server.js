@@ -164,8 +164,51 @@ app.post('/whiteboard/save/image', async (req, res) => {
                     ctx.font = item.font || '16px sans-serif';
                     ctx.fillText(item.text, item.startX, item.startY);
                     break;
-            }
-        }
+                case 'startEvent':
+                    const radiusStart = item.radius;
+                    ctx.beginPath();
+                    ctx.arc(item.startX, item.startY, radiusStart, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    
+                    // Draw the inner circle
+                    ctx.beginPath();
+                    ctx.arc(item.startX, item.startY, radiusStart * 0.6, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    break;
+                case 'endEvent':
+                    const radiusEnd = item.radius;
+                    ctx.beginPath();
+                    ctx.arc(item.startX, item.startY, radiusEnd, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    
+                    // Draw the inner circle
+                    ctx.beginPath();
+                    ctx.arc(item.startX, item.startY, radiusEnd * 0.6, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'black';
+                    ctx.fill();
+                    break;
+                case 'gateway':
+                    ctx.beginPath();
+                    ctx.moveTo(item.startX + item.width / 2, item.startY);
+                    ctx.lineTo(item.startX + item.width, item.startY + item.height / 2);
+                    ctx.lineTo(item.startX + item.width / 2, item.startY + item.height);
+                    ctx.lineTo(item.startX, item.startY + item.height / 2);
+                    ctx.closePath();
+                    ctx.stroke();
+                    break;
+                    case 'task':
+                        // Set the color and thickness
+                        ctx.strokeStyle = item.color;
+                        ctx.lineWidth = item.thickness;
+                    
+                        // Draw the outline of the rectangle
+                        ctx.strokeRect(item.startX, item.startY, item.width, item.height);
+                        
+                        // Fill the rectangle with the specified color
+                        
+                        break;
+                        }
+                    }
 
         // 2. Save Image to Nextcloud
         const imageBuffer = canvas.toBuffer('image/png');
@@ -194,28 +237,7 @@ app.post('/whiteboard/save/image', async (req, res) => {
 });
 
 // Load whiteboard data
-app.get('/whiteboard/load/:fileId', async (req, res) => {
-    try {
-        const fileId = req.params.fileId;
 
-        const response = await fetch(`${webdavUrl}${fileId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': authHeader,
-            }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            res.json({ success: true, data }); 
-        } else {
-            throw new Error(`Failed to load whiteboard: ${response.statusText}`);
-        }
-    } catch (error) {
-        console.error("Error loading whiteboard:", error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 // Test API Endpoint to Verify Nextcloud Connection
 app.get('/whiteboard/test', async (req, res) => {
