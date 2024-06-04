@@ -10,6 +10,7 @@ const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const app = express();
+const { DOMParser } = require('xmldom');
 const server = http.createServer(app);
 const io = socketIo(server);
 const port = process.env.PORT || 3000;
@@ -35,7 +36,13 @@ const activeWhiteboards = new Map();
 // Socket.IO Connection Handling
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
-
+    const client = createClient(
+        webdavUrl,
+        {
+            username: username,
+            password: password
+        }
+    );
     // ... (rest of the Socket.IO logic remains the same)
 });
 
@@ -239,24 +246,71 @@ app.post('/whiteboard/save/image', async (req, res) => {
 // Load whiteboard data
 
 
-// Test API Endpoint to Verify Nextcloud Connection
-app.get('/whiteboard/test', async (req, res) => {
+app.get('/whiteboard/files', async (req, res) => {
     try {
-        const response = await fetch(webdavUrl, { // Check WebDAV root
-            method: 'PROPFIND', 
+        const response = await fetch(`${webdavUrl}${whiteboardFolder}`, {
+            method: 'PROPFIND',
             headers: {
                 'Authorization': authHeader,
-                'Depth': '0' 
+                'Depth': '1'
             }
         });
 
         if (response.ok) {
-            res.json({ success: true, message: 'Connected to Nextcloud!' });
+            const text = await response.text();
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(text, 'application/xml');
+
+            const files = Array.from(xmlDoc.getElementsByTagName('d:response'))
+                .filter(response => {
+                    const href = response.getElementsByTagName('d:href')[0].textContent;
+                    const filename = decodeURIComponent(href).replace(`${webdavUrl}${whiteboardFolder}/`, '');
+                    return filename !== "" && filename.endsWith('.json');
+                })
+                .map(response => {
+                    const href = response.getElementsByTagName('d:href')[0].textContent;
+                    const fullPath = decodeURIComponent(href);
+                    const filename = fullPath.split('/').pop(); // Extract the filename from the full path
+                    return {
+                        id: href,
+                        name: filename // Only the filename without path
+                    };
+                });
+
+            // Return the list of files to the client
+            res.json({ success: true, files });
         } else {
-            throw new Error(`Nextcloud connection failed: ${response.statusText}`);
+            throw new Error(`Failed to list files: ${response.statusText}`);
         }
     } catch (error) {
-        console.error('Error connecting to Nextcloud:', error);
+        console.error('Error fetching file list:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+
+
+app.get('/whiteboard/load/:filename', async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const filePath = `${whiteboardFolder}/${filename}`;
+
+        const response = await fetch(`${webdavUrl}${filePath}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': authHeader
+            }
+        });
+
+        if (response.ok) {
+            const fileContent = await response.json();
+            res.json(fileContent);
+        } else {
+            throw new Error(`Failed to load whiteboard: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error("Error loading whiteboard:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
