@@ -314,6 +314,31 @@ app.get('/whiteboard/load/:filename', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+app.get('/whiteboard/load/:filename', async (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filePath = `${whiteboardFolder}/${filename}`; // Construct the full path to the file
+
+        const response = await fetch(`${webdavUrl}${filePath}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': authHeader
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.text();
+            res.json({ success: true, data: JSON.parse(data) }); // Parse and return data as JSON
+        } else {
+            throw new Error(`Failed to load whiteboard: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error("Error loading whiteboard:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Start the server
 server.listen(port, () => {
     console.log(`Whiteboard backend listening at http://localhost:${port}`);
